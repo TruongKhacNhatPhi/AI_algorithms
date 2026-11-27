@@ -1,13 +1,16 @@
+import asyncio
 import ctypes
 import math
+import sys
 
-try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(2)
-except Exception:
+if sys.platform == "win32":
     try:
-        ctypes.windll.user32.SetProcessDPIAware()
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
     except Exception:
-        pass
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
 
 import pygame
 
@@ -834,48 +837,60 @@ class App:
         ratio = max(0.0, min(1.0, (mx - self.scrub_rect.x) / max(1, self.scrub_rect.w)))
         self.go_to(round(ratio * (len(self.frames) - 1)))
 
+    def _handle_events(self):
+        prob_keys = list(PROBLEMS.keys())
+        for ev in pygame.event.get():
+            if ev.type == pygame.QUIT:
+                return False
+            elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
+                mx, my = ev.pos
+                if self.scrub_rect.inflate(10, 14).collidepoint(mx, my):
+                    self.dragging_scrub = True
+                    self.scrub_to_mouse(mx)
+                    continue
+                for rect, cb in self.buttons:
+                    if rect.collidepoint(mx, my):
+                        cb()
+                        break
+                for rect, aid in self.compare_rects:
+                    if rect.collidepoint(mx, my):
+                        self.select_algo(aid)
+                        break
+            elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 1:
+                self.dragging_scrub = False
+            elif ev.type == pygame.MOUSEMOTION and self.dragging_scrub:
+                self.scrub_to_mouse(ev.pos[0])
+            elif ev.type == pygame.KEYDOWN:
+                if ev.key == pygame.K_SPACE:
+                    self.toggle_play()
+                elif ev.key == pygame.K_RIGHT:
+                    self.go_to(self.idx + 1)
+                elif ev.key == pygame.K_LEFT:
+                    self.go_to(self.idx - 1)
+                elif ev.key == pygame.K_TAB:
+                    nxt_i = (prob_keys.index(self.problem_id) + 1) % len(prob_keys)
+                    self.select_problem(prob_keys[nxt_i])
+        return True
+
     def run(self):
         running = True
-        prob_keys = list(PROBLEMS.keys())
         while running:
             dt = self.clock.tick(FPS) / 1000.0
-            for ev in pygame.event.get():
-                if ev.type == pygame.QUIT:
-                    running = False
-                elif ev.type == pygame.MOUSEBUTTONDOWN and ev.button == 1:
-                    mx, my = ev.pos
-                    if self.scrub_rect.inflate(10, 14).collidepoint(mx, my):
-                        self.dragging_scrub = True
-                        self.scrub_to_mouse(mx)
-                        continue
-                    for rect, cb in self.buttons:
-                        if rect.collidepoint(mx, my):
-                            cb()
-                            break
-                    for rect, aid in self.compare_rects:
-                        if rect.collidepoint(mx, my):
-                            self.select_algo(aid)
-                            break
-                elif ev.type == pygame.MOUSEBUTTONUP and ev.button == 1:
-                    self.dragging_scrub = False
-                elif ev.type == pygame.MOUSEMOTION and self.dragging_scrub:
-                    self.scrub_to_mouse(ev.pos[0])
-                elif ev.type == pygame.KEYDOWN:
-                    if ev.key == pygame.K_SPACE:
-                        self.toggle_play()
-                    elif ev.key == pygame.K_RIGHT:
-                        self.go_to(self.idx + 1)
-                    elif ev.key == pygame.K_LEFT:
-                        self.go_to(self.idx - 1)
-                    elif ev.key == pygame.K_TAB:
-                        nxt_i = (prob_keys.index(self.problem_id) + 1) % len(prob_keys)
-                        self.select_problem(prob_keys[nxt_i])
-
+            running = self._handle_events()
             self.update(dt)
             self.render()
+        pygame.quit()
 
+    async def run_async(self):
+        running = True
+        while running:
+            dt = self.clock.tick(FPS) / 1000.0
+            running = self._handle_events()
+            self.update(dt)
+            self.render()
+            await asyncio.sleep(0)
         pygame.quit()
 
 
 if __name__ == "__main__":
-    App().run()
+    asyncio.run(App().run_async())
